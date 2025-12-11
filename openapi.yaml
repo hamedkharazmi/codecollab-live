@@ -1,0 +1,318 @@
+openapi: 3.1.0
+info:
+  title: CodeCollab Interview API
+  version: 1.0.0
+  description: >-
+    API specification for the backend required by the frontend client (code
+    interview platform). Covers session lifecycle, collaborative code updates,
+    code execution, and real-time subscriptions (described for WebSocket).
+servers:
+  - url: https://api.example.com
+    description: Production API server (replace with your URL)
+paths:
+  /sessions:
+    post:
+      summary: Create a new interview session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                hostName:
+                  type: string
+              required:
+                - hostName
+      responses:
+        '201':
+          description: Session created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateSessionResponse'
+  /sessions/{sessionId}/join:
+    post:
+      summary: Join an existing session
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                userName:
+                  type: string
+              required:
+                - userName
+      responses:
+        '200':
+          description: Joined session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JoinSessionResponse'
+        '404':
+          description: Session not found
+  /sessions/{sessionId}:
+    get:
+      summary: Get session details
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Session details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InterviewSession'
+        '404':
+          description: Session not found
+  /sessions/{sessionId}/code:
+    patch:
+      summary: Update session code (broadcast to collaborators)
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                userId:
+                  type: string
+                code:
+                  type: string
+                language:
+                  $ref: '#/components/schemas/SupportedLanguage'
+              required:
+                - userId
+                - code
+                - language
+      responses:
+        '204':
+          description: Code update accepted
+        '404':
+          description: Session not found
+  /sessions/{sessionId}/execute:
+    post:
+      summary: Execute code in a safe sandbox (returns execution result)
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                code:
+                  type: string
+                language:
+                  $ref: '#/components/schemas/SupportedLanguage'
+              required:
+                - code
+                - language
+      responses:
+        '200':
+          description: Execution result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExecutionResult'
+        '400':
+          description: Bad request (invalid code or language)
+  /sessions/{sessionId}/leave:
+    post:
+      summary: Leave a session
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                userId:
+                  type: string
+              required:
+                - userId
+      responses:
+        '204':
+          description: Left session
+  /sessions/{sessionId}/end:
+    post:
+      summary: End a session (host only)
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Session ended
+        '403':
+          description: Forbidden (not host)
+  /default-code:
+    get:
+      summary: Get default starter code for a language
+      parameters:
+        - name: language
+          in: query
+          required: true
+          schema:
+            $ref: '#/components/schemas/SupportedLanguage'
+      responses:
+        '200':
+          description: Default template for language
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  language:
+                    $ref: '#/components/schemas/SupportedLanguage'
+                  code:
+                    type: string
+                required:
+                  - language
+                  - code
+components:
+  schemas:
+    SupportedLanguage:
+      type: string
+      enum:
+        - javascript
+        - typescript
+        - python
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        isHost:
+          type: boolean
+        joinedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - name
+        - isHost
+        - joinedAt
+    CodeChange:
+      type: object
+      properties:
+        userId:
+          type: string
+        content:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+        language:
+          $ref: '#/components/schemas/SupportedLanguage'
+      required:
+        - userId
+        - content
+        - timestamp
+        - language
+    InterviewSession:
+      type: object
+      properties:
+        id:
+          type: string
+        code:
+          type: string
+        language:
+          $ref: '#/components/schemas/SupportedLanguage'
+        participants:
+          type: array
+          items:
+            $ref: '#/components/schemas/User'
+        createdAt:
+          type: string
+          format: date-time
+        isActive:
+          type: boolean
+      required:
+        - id
+        - code
+        - language
+        - participants
+        - createdAt
+        - isActive
+    ExecutionResult:
+      type: object
+      properties:
+        success:
+          type: boolean
+        output:
+          type: string
+        error:
+          type: string
+        executionTime:
+          type: number
+      required:
+        - success
+        - output
+        - executionTime
+    CreateSessionResponse:
+      type: object
+      properties:
+        sessionId:
+          type: string
+        shareLink:
+          type: string
+      required:
+        - sessionId
+        - shareLink
+    JoinSessionResponse:
+      type: object
+      properties:
+        session:
+          $ref: '#/components/schemas/InterviewSession'
+        userId:
+          type: string
+      required:
+        - session
+        - userId
+security: []
+x-realtime:
+  description: |
+    Real-time collaboration is recommended to be implemented with WebSocket.
+    Suggested WebSocket URI: wss://api.example.com/ws/sessions/{sessionId}
+    Message envelope (JSON) examples:
+
+    - From server: {"type":"code_change","payload": {"userId":"...","content":"...","timestamp":"...","language":"javascript"}}
+    - From server: {"type":"participants_update","payload": [{"id":"...","name":"...","isHost":false,"joinedAt":"..."}]}
+    - From client: {"type":"subscribe","payload":{"channels":["code","participants"]}}
+
+    If using Server-Sent Events (SSE) use an endpoint like `/sessions/{sessionId}/events` that yields text/event-stream with event types `code_change` and `participants_update`.

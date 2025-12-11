@@ -1,10 +1,13 @@
 """Main FastAPI application."""
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
+from sqlalchemy.orm import Session
+import os
 
-from app.database import db
+from app.db import init_db, get_db
+from app.database import DatabaseService
 from app.executor import execute_code
 from app.models import (
     CreateSessionRequest,
@@ -21,7 +24,9 @@ from app.models import (
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan context manager."""
-    # Startup
+    # Startup: initialize database (skip in test mode)
+    if not os.getenv("TESTING"):
+        init_db()
     yield
     # Shutdown
 
@@ -44,26 +49,29 @@ app.add_middleware(
 
 
 @app.post("/sessions", response_model=CreateSessionResponse, status_code=201)
-async def create_session(request: Request, body: CreateSessionRequest):
+async def create_session(request: Request, body: CreateSessionRequest, db: Session = Depends(get_db)):
     """Create a new interview session."""
     base_url = f"{request.url.scheme}://{request.url.netloc}"
-    session_id, share_link = db.create_session(body.hostName, base_url)
+    service = DatabaseService(db)
+    session_id, share_link = service.create_session(body.hostName, base_url)
     return CreateSessionResponse(sessionId=session_id, shareLink=share_link)
 
 
 @app.get("/sessions/{session_id}", status_code=200)
-async def get_session(session_id: str):
+async def get_session(session_id: str, db: Session = Depends(get_db)):
     """Get session details."""
-    session = db.get_session(session_id)
+    service = DatabaseService(db)
+    session = service.get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     return session
 
 
 @app.post("/sessions/{session_id}/join", response_model=JoinSessionResponse)
-async def join_session(session_id: str, body: JoinSessionRequest):
+async def join_session(session_id: str, body: JoinSessionRequest, db: Session = Depends(get_db)):
     """Join an existing session."""
-    result = db.join_session(session_id, body.userName)
+    service = DatabaseService(db)
+    result = service.join_session(session_id, body.userName)
     if result is None:
         raise HTTPException(status_code=404, detail="Session not found")
 
@@ -72,17 +80,19 @@ async def join_session(session_id: str, body: JoinSessionRequest):
 
 
 @app.patch("/sessions/{session_id}/code", status_code=204)
-async def update_code(session_id: str, body: UpdateCodeRequest):
+async def update_code(session_id: str, body: UpdateCodeRequest, db: Session = Depends(get_db)):
     """Update session code."""
-    success = db.update_code(session_id, body.code, body.language)
+    service = DatabaseService(db)
+    success = service.update_code(session_id, body.code, body.language)
     if not success:
         raise HTTPException(status_code=404, detail="Session not found")
 
 
 @app.post("/sessions/{session_id}/execute")
-async def execute_code_endpoint(session_id: str, body: ExecuteCodeRequest):
+async def execute_code_endpoint(session_id: str, body: ExecuteCodeRequest, db: Session = Depends(get_db)):
     """Execute code in a safe sandbox."""
-    session = db.get_session(session_id)
+    service = DatabaseService(db)
+    session = service.get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
@@ -91,23 +101,25 @@ async def execute_code_endpoint(session_id: str, body: ExecuteCodeRequest):
 
 
 @app.post("/sessions/{session_id}/leave", status_code=204)
-async def leave_session(session_id: str, body: LeaveSessionRequest):
+async def leave_session(session_id: str, body: LeaveSessionRequest, db: Session = Depends(get_db)):
     """Leave a session."""
-    success = db.leave_session(session_id, body.userId)
+    service = DatabaseService(db)
+    success = service.leave_session(session_id, body.userId)
     if not success:
         raise HTTPException(status_code=404, detail="Session not found")
 
 
 @app.post("/sessions/{session_id}/end", status_code=204)
-async def end_session(session_id: str):
+async def end_session(session_id: str, db: Session = Depends(get_db)):
     """End a session (host only)."""
-    success = db.end_session(session_id)
+    service = DatabaseService(db)
+    success = service.end_session(session_id)
     if not success:
         raise HTTPException(status_code=404, detail="Session not found")
 
 
 @app.get("/default-code", response_model=DefaultCodeResponse)
-async def get_default_code(language: str):
+async def get_default_code(language: str, db: Session = Depends(get_db)):
     """Get default code template for a language."""
     valid_languages = ["javascript", "typescript", "python"]
     if language not in valid_languages:
@@ -116,7 +128,8 @@ async def get_default_code(language: str):
             detail=f"Unsupported language. Must be one of: {', '.join(valid_languages)}",
         )
 
-    code = db.get_default_code(language)
+    service = DatabaseService(db)
+    code = service.get_default_code(language)
     return DefaultCodeResponse(language=language, code=code)
 
 

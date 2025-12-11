@@ -1,10 +1,11 @@
-"""Mock in-memory database for sessions."""
+"""SQL-backed repository using SQLAlchemy."""
 
-import uuid
 from datetime import datetime
-from typing import Optional
-
-from .models import InterviewSession, User, SupportedLanguage
+from typing import Optional, Tuple
+from sqlalchemy.orm import Session
+from .orm_models import Session as ORMSession, SessionUser, CodeChange
+from .models import SupportedLanguage
+import uuid
 
 
 # Default code templates
@@ -44,105 +45,133 @@ print(solution("Hello, World!"))
 }
 
 
-class Database:
-    """Mock in-memory database (will be replaced with real DB later)."""
+class DatabaseService:
+    """Repository backed by SQLAlchemy."""
 
-    def __init__(self):
-        self.sessions: dict[str, InterviewSession] = {}
+    def __init__(self, db: Session):
+        self.db = db
 
-    def create_session(self, host_name: str, base_url: str) -> tuple[str, str]:
-        """Create a new session.
-
-        Args:
-            host_name: Name of the session host
-            base_url: Base URL for generating share link
-
-        Returns:
-            Tuple of (session_id, share_link)
-        """
+    def create_session(self, host_name: str, base_url: str) -> Tuple[str, str]:
+        """Create a new session."""
         session_id = str(uuid.uuid4())[:8]
+        
+        orm_session = ORMSession(id=session_id, code=DEFAULT_CODE["javascript"], language="javascript")
+        self.db.add(orm_session)
+        self.db.flush()
 
-        host_user = User(
+        host_user = SessionUser(
             id=str(uuid.uuid4()),
             name=host_name,
             isHost=True,
-            joinedAt=datetime.now(),
+            joinedAt=datetime.utcnow(),
+            session_id=orm_session.id,
         )
+        self.db.add(host_user)
+        self.db.commit()
 
-        session = InterviewSession(
-            id=session_id,
-            code=DEFAULT_CODE["javascript"],
-            language="javascript",
-            participants=[host_user],
-            createdAt=datetime.now(),
-            isActive=True,
-        )
+        share_link = f"{base_url}/interview/{orm_session.id}"
+        return orm_session.id, share_link
 
-        self.sessions[session_id] = session
-        share_link = f"{base_url}/interview/{session_id}"
-
-        return session_id, share_link
-
-    def get_session(self, session_id: str) -> Optional[InterviewSession]:
+    def get_session(self, session_id: str) -> Optional[dict]:
         """Get session by ID."""
-        return self.sessions.get(session_id)
-
-    def join_session(self, session_id: str, user_name: str) -> Optional[tuple[InterviewSession, str]]:
-        """Join a session.
-
-        Args:
-            session_id: Session to join
-            user_name: Name of the user joining
-
-        Returns:
-            Tuple of (session, user_id) or None if session not found
-        """
-        session = self.sessions.get(session_id)
-        if not session or not session.isActive:
+        orm = self.db.query(ORMSession).filter(ORMSession.id == session_id).first()
+        if not orm:
             return None
 
-        new_user = User(
+        return {
+            "id": orm.id,
+            "code": orm.code,
+            "language": orm.language,
+            "participants": [
+                {"id": p.id, "name": p.name, "isHost": p.isHost, "joinedAt": p.joinedAt}
+                for p in orm.participants
+            ],
+            "createdAt": orm.createdAt,
+            "isActive": orm.isActive,
+        }
+
+    def join_session(self, session_id: str, user_name: str) -> Optional[Tuple[dict, str]]:
+        """Join a session."""
+        orm = (
+            self.db.query(ORMSession)
+            .filter(ORMSession.id == session_id, ORMSession.isActive == True)
+            .first()
+        )
+        if not orm:
+            return None
+
+        new_user = SessionUser(
             id=str(uuid.uuid4()),
             name=user_name,
             isHost=False,
-            joinedAt=datetime.now(),
+            joinedAt=datetime.utcnow(),
+            session_id=orm.id,
         )
+        self.db.add(new_user)
+        self.db.commit()
+        self.db.refresh(orm)
 
-        session.participants.append(new_user)
-        return session, new_user.id
+        session_dict = {
+            "id": orm.id,
+            "code": orm.code,
+            "language": orm.language,
+            "participants": [
+                {"id": p.id, "name": p.name, "isHost": p.isHost, "joinedAt": p.joinedAt}
+                for p in orm.participants
+            ],
+            "createdAt": orm.createdAt,
+            "isActive": orm.isActive,
+        }
+        return session_dict, new_user.id
 
     def update_code(self, session_id: str, code: str, language: SupportedLanguage) -> bool:
         """Update code in a session."""
-        session = self.sessions.get(session_id)
-        if not session:
+        orm = self.db.query(ORMSession).filter(ORMSession.id == session_id).first()
+        if not orm:
             return False
 
-        session.code = code
-        session.language = language
+        orm.code = code
+        orm.language = language
+        self.db.commit()
+
+        # Log change for audit trail
+        change = CodeChange(
+            session_id=session_id,
+            userId="system",
+            content=code,
+            language=language,
+            timestamp=datetime.utcnow(),
+        )
+        self.db.add(change)
+        self.db.commit()
         return True
 
     def leave_session(self, session_id: str, user_id: str) -> bool:
         """Remove a user from a session."""
-        session = self.sessions.get(session_id)
-        if not session:
+        user = self.db.query(SessionUser).filter(
+            SessionUser.id == user_id, SessionUser.session_id == session_id
+        ).first()
+        if not user:
             return False
 
-        session.participants = [p for p in session.participants if p.id != user_id]
+        self.db.delete(user)
+        self.db.commit()
         return True
 
     def end_session(self, session_id: str) -> bool:
-        """End a session (mark as inactive)."""
-        session = self.sessions.get(session_id)
-        if not session:
+        """End a session."""
+        orm = self.db.query(ORMSession).filter(ORMSession.id == session_id).first()
+        if not orm:
             return False
 
-        session.isActive = False
+        orm.isActive = False
+        self.db.commit()
         return True
 
     def get_default_code(self, language: SupportedLanguage) -> str:
-        """Get default code template for a language."""
+        """Get default code template."""
         return DEFAULT_CODE.get(language, DEFAULT_CODE["javascript"])
 
+    def get_default_code(self, language: SupportedLanguage) -> str:
+        return DEFAULT_CODE.get(language, DEFAULT_CODE["javascript"])
 
-# Global database instance
-db = Database()
