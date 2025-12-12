@@ -2,7 +2,7 @@
 
 A real-time collaborative coding interview platform that allows interviewers and candidates to write, execute, and debug code together in a shared session.
 
-<video src="https://github.com/hamedkharazmi/codecollab-live/video.mp4" controls width="600"></video>
+![Demo](demo.gif)
 
 ## Features
 
