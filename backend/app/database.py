@@ -62,7 +62,7 @@ console.log(solution({ values: [1, 2, 3, 4, 5], operation: 'sum' }));
 from typing import List, Union
 
 def solution(input_data: Union[List[int], str]) -> int:
-    """
+    \"\"\"
     Calculate the sum of all numbers in a list.
     
     Args:
@@ -70,7 +70,7 @@ def solution(input_data: Union[List[int], str]) -> int:
         
     Returns:
         The sum of all numbers, or 0 if input is invalid
-    """
+    \"\"\"
     if not isinstance(input_data, list):
         return 0
     
