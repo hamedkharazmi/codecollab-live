@@ -29,6 +29,9 @@ def get_db() -> Session:
 
 def init_db():
     """Create tables."""
+    # Import ORM models here to avoid circular imports (models import `Base`)
+    from . import orm_models  # noqa: F401
+
     Base.metadata.create_all(bind=engine)
 
 

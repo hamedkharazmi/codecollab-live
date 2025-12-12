@@ -8,39 +8,88 @@ from .models import SupportedLanguage
 import uuid
 
 
-# Default code templates
+# Default code templates with syntax highlighting examples
 DEFAULT_CODE = {
     "javascript": """// Welcome to the coding interview!
 // Write your solution below
 
 function solution(input) {
-  // Your code here
-  return input;
+  // Example: Find the sum of all numbers in an array
+  if (!Array.isArray(input)) {
+    return 0;
+  }
+  
+  return input.reduce((sum, num) => {
+    return sum + (typeof num === 'number' ? num : 0);
+  }, 0);
 }
 
 // Test your solution
+console.log(solution([1, 2, 3, 4, 5])); // Output: 15
 console.log(solution("Hello, World!"));
 """,
     "typescript": """// Welcome to the coding interview!
 // Write your solution below
 
-function solution(input: string): string {
-  // Your code here
-  return input;
+interface InputData {
+  values: number[];
+  operation: 'sum' | 'product' | 'average';
+}
+
+function solution(data: InputData): number {
+  const { values, operation } = data;
+  
+  if (!values.length) return 0;
+  
+  switch (operation) {
+    case 'sum':
+      return values.reduce((a, b) => a + b, 0);
+    case 'product':
+      return values.reduce((a, b) => a * b, 1);
+    case 'average':
+      return values.reduce((a, b) => a + b, 0) / values.length;
+    default:
+      throw new Error(`Unknown operation: ${operation}`);
+  }
 }
 
 // Test your solution
-console.log(solution("Hello, World!"));
+console.log(solution({ values: [1, 2, 3, 4, 5], operation: 'sum' }));
 """,
     "python": """# Welcome to the coding interview!
 # Write your solution below
 
-def solution(input):
-    # Your code here
-    return input
+from typing import List, Union
+
+def solution(input_data: Union[List[int], str]) -> int:
+    """
+    Calculate the sum of all numbers in a list.
+    
+    Args:
+        input_data: A list of integers or a string
+        
+    Returns:
+        The sum of all numbers, or 0 if input is invalid
+    """
+    if not isinstance(input_data, list):
+        return 0
+    
+    total = 0
+    for num in input_data:
+        if isinstance(num, (int, float)):
+            total += num
+    
+    return total
 
 # Test your solution
-print(solution("Hello, World!"))
+result1 = solution([1, 2, 3, 4, 5])
+print(f"Sum of [1, 2, 3, 4, 5]: {result1}")  # Output: 15
+
+result2 = solution([10, 20, 30])
+print(f"Sum of [10, 20, 30]: {result2}")  # Output: 60
+
+result3 = solution("Hello, World!")
+print(f"Sum of 'Hello, World!': {result3}")  # Output: 0
 """,
 }
 
