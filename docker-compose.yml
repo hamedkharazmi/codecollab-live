@@ -20,34 +20,19 @@ services:
     networks:
       - codecollab-network
 
-  backend:
+  app:
     build:
-      context: ./backend
+      context: .
       dockerfile: Dockerfile
-    container_name: codecollab-backend
+    container_name: codecollab-app
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-codecollab}:${POSTGRES_PASSWORD:-codecollab_dev_password}@postgres:5432/${POSTGRES_DB:-codecollab}
       TESTING: "false"
     ports:
-      - "${BACKEND_PORT:-8000}:8000"
+      - "${APP_PORT:-8000}:8000"
     depends_on:
       postgres:
         condition: service_healthy
-    networks:
-      - codecollab-network
-    restart: unless-stopped
-
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    container_name: codecollab-frontend
-    environment:
-      VITE_API_URL: http://localhost:8000
-    ports:
-      - "${FRONTEND_PORT:-80}:80"
-    depends_on:
-      - backend
     networks:
       - codecollab-network
     restart: unless-stopped

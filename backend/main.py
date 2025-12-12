@@ -2,9 +2,11 @@
 
 from fastapi import FastAPI, HTTPException, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from contextlib import asynccontextmanager
 from sqlalchemy.orm import Session
 import os
+from pathlib import Path
 
 from app.db import init_db, get_db
 from app.database import DatabaseService
@@ -46,6 +48,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Mount static files (frontend build) if they exist - mount at end
+static_dir = Path(__file__).parent / "static"
 
 
 @app.post("/sessions", response_model=CreateSessionResponse, status_code=201)
@@ -137,6 +142,47 @@ async def get_default_code(language: str, db: Session = Depends(get_db)):
 async def health_check():
     """Health check endpoint."""
     return {"status": "ok"}
+
+
+# Root route: serve index.html for SPA
+@app.get("/")
+async def serve_index():
+    """Serve the SPA index.html at the root."""
+    # Redirect to the explicit static path
+    static_index = Path(__file__).parent / "static" / "index.html"
+    if static_index.exists():
+        return FileResponse(static_index)
+    return {"detail": "Not Found"}
+
+# Also mount the static directory at /static for direct file access
+from fastapi.staticfiles import StaticFiles
+static_dir = Path(__file__).parent / "static"
+if static_dir.exists():
+    app.mount("/static", StaticFiles(directory=static_dir), name="static-files")
+
+
+# Catch-all route: serve index.html for all non-API routes (SPA support)
+@app.get("/{full_path:path}")
+async def serve_frontend(full_path: str):
+    """Serve frontend static files, falling back to index.html for SPA routing."""
+    static_dir_path = Path(__file__).parent / "static"
+    static_index = static_dir_path / "index.html"
+    
+    # For paths without extension, serve index.html
+    if "." not in full_path.split("/")[-1]:
+        if static_index.exists():
+            return FileResponse(static_index)
+    else:
+        # Try to serve the actual file if it has an extension
+        file_path = static_dir_path / full_path
+        if file_path.exists() and file_path.is_file():
+            return FileResponse(file_path)
+    
+    # Fallback: if file doesn't exist, try index.html (SPA routing)
+    if static_index.exists():
+        return FileResponse(static_index)
+    
+    return {"detail": "Not Found"}
 
 
 if __name__ == "__main__":
